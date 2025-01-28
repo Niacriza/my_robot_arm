@@ -13,6 +13,8 @@ from launch.substitutions import PathJoinSubstitution
 from os.path import join
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_param_builder import load_xacro
+from pathlib import Path
 
 from moveit_configs_utils import MoveItConfigsBuilder
 from moveit_configs_utils.launches import generate_move_group_launch
@@ -34,18 +36,32 @@ def generate_launch_description():
         launch_arguments=dict(gz_args='-r empty.sdf --verbose').items(),
         )
 
-    # Spawn
-    spawn = Node(
-            package='ros_gz_sim',
-            executable='create',
-            arguments=[
-                '-name', 'my_robot_arm.urdf',
-                '-x', '1.2',
-                '-z', '2.3',
-                '-Y', '3.4',
-                '-topic', '/robot_description'
-                ],
-            output='screen',
+
+    # Step 1. Process robot file. 
+    robot_file = join(get_package_share_directory("my_robot_arm"), "urdf","my_robot_arm.urdf.xacro")
+    robot_xml = load_xacro(Path(robot_file))
+
+
+    #Step 2. Publish robot file to ros topic /robot_description & static joint positions to /tf
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='both',
+        parameters=[{'robot_description':robot_xml, 
+                     'use_sim_time':True}],
+    )
+
+    # Step 3. Spawn a robot in gazebo by listening to the published topic.
+    robot = Node(
+        package='ros_gz_sim',
+        executable="create",
+        arguments=[
+            "-topic", "/robot_description", 
+            "-z", "0.5",
+        ],
+        name="spawn_robot",
+        output="both"
     )
 
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -56,17 +72,7 @@ def generate_launch_description():
 
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value='true')
 
-    robot_state_publisher = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([
-                PathJoinSubstitution([
-                    FindPackageShare(resources_package),
-                    'launch',
-                    'description.launch.py'
-                    ])
-                ]),
-            condition=UnlessCondition(use_rviz),  # rviz launch includes rsp.
-            launch_arguments=dict(use_sim_time=use_sim_time).items(),
-            )
+ 
 
     rviz = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -98,6 +104,6 @@ def generate_launch_description():
         robot_state_publisher,
         rviz,
         gazebo,
-        spawn,
+        robot,
         start_controllers
     ])
