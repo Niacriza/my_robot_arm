@@ -105,5 +105,7 @@ def generate_launch_description():
         rviz,
         gazebo,
         robot,
-        start_controllers
+        start_controllers,
+        move_group,
+        mg_sim_time
     ])
